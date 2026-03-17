@@ -1,0 +1,44 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Project specific
+stocks
+stocks.db
+
+# Reports and temporary data (often sensitive)
+*.csv
+*.json
+# Exclude config or manifest files if they exist
+!package.json
+!tsconfig.json
+!go.mod
+!go.sum
+!README.md
+
+
+# IDEs
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.eslintcache

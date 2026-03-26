@@ -33,6 +33,7 @@ stocks.db
 !go.mod
 !go.sum
 !README.md
+!frontend/src/i18n/locales/*.json
 
 
 # IDEs

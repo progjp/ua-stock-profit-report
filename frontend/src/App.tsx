@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Upload, LayoutDashboard, History, DollarSign, TrendingUp, ReceiptText, Wallet } from 'lucide-react';
 
-const API_URL = 'http://localhost:8080/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 interface Summary {
   total_realized_profit: number;
@@ -28,24 +28,35 @@ interface Holding {
 }
 
 interface SellReport {
+  broker: string;
   symbol: string;
   date: string;
+  buy_date: string;
   quantity: number;
   buy_price: number;
   sell_price: number;
-  commission: number;
+  commission_buy: number;
+  commission_sell: number;
+  commission_buy_uah: number;
+  commission_sell_uah: number;
+  tax: number;
+  tax_uah: number;
   profit: number;
   profit_uah: number;
   currency: string;
   currency_rate_buy: number;
   currency_rate_sell: number;
+  comment: string;
 }
 
 interface DividendReport {
+  broker: string;
   symbol: string;
   date: string;
   gross_amount: number;
+  gross_amount_uah: number;
   tax: number;
+  tax_uah: number;
   net_amount: number;
   amount_uah: number;
   currency: string;
@@ -80,7 +91,7 @@ const formatCurrency = (amount: number, currency: string) => {
 };
 
 const formatUAH = (amount: number) => {
-    return `${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₴`;
+    return `${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₴`;
 };
 
 const getCurrencyTotals = <T extends { currency: string }>(
@@ -102,10 +113,13 @@ const App: React.FC = () => {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [data, setData] = useState<PortfolioData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [useGrossTaxBase, setUseGrossTaxBase] = useState(true);
   const [selectedBroker, setSelectedBroker] = useState<'IBKR' | 'FreedomFinance'>('IBKR');
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadStats, setUploadStats] = useState<{ count: number } | null>(null);
 
   // Date range state
   const currentYear = new Date().getFullYear().toString();
@@ -146,10 +160,10 @@ const App: React.FC = () => {
     formData.append('file', file);
     formData.append('broker', selectedBroker);
     try {
-      await axios.post(`${API_URL}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      alert('Upload successful!');
+      const res = await axios.post(`${API_URL}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setUploadStats(res.data);
+      setShowUploadModal(true);
       fetchData();
-      setActiveTab('dashboard');
     } catch (err) { alert('Upload failed'); } finally { setLoading(false); }
   };
 
@@ -160,7 +174,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans">
       <nav className="bg-slate-800 border-b border-slate-700 p-4">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
+        <div className="w-full max-w-[1800px] mx-auto flex justify-between items-center px-4">
           <div className="flex items-center space-x-2 font-bold text-xl text-blue-400"><TrendingUp size={24} /><span>StockProfits</span></div>
           <div className="flex space-x-6">
             <button onClick={() => setActiveTab('dashboard')} className={`flex items-center space-x-1 ${activeTab === 'dashboard' ? 'text-blue-400' : 'hover:text-blue-300'}`}><LayoutDashboard size={18} /><span>Dashboard</span></button>
@@ -170,7 +184,7 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      <main className="max-w-6xl mx-auto p-6">
+      <main className="w-full max-w-[1800px] mx-auto p-4 md:p-8">
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
             {/* Date Range Selector */}
@@ -207,85 +221,361 @@ const App: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                <div className="flex items-center justify-between mb-2"><span className="text-slate-400 uppercase text-xs font-bold tracking-wider">Total Realized Profit</span><DollarSign className="text-emerald-400" size={20} /></div>
-                <div className="text-2xl font-bold text-emerald-400">{formatUAH(summary?.total_realized_profit_uah || 0)}</div>
+              <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl bg-gradient-to-br from-slate-800 to-emerald-900/20">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2 bg-emerald-500/10 rounded-lg"><DollarSign className="text-emerald-400" size={24} /></div>
+                  <span className="text-slate-400 uppercase text-[10px] font-black tracking-widest">Realized Profit</span>
+                </div>
+                <div className="text-3xl font-mono font-bold text-emerald-400 leading-none">{formatUAH(summary?.total_realized_profit_uah || 0)}</div>
+                <div className="mt-2 text-xs text-slate-500 font-medium">Net capital gains in UAH</div>
               </div>
-              <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                <div className="flex items-center justify-between mb-2"><span className="text-slate-400 uppercase text-xs font-bold tracking-wider">Total Dividends</span><ReceiptText className="text-blue-400" size={20} /></div>
-                <div className="text-2xl font-bold text-blue-400">{formatUAH(summary?.total_dividends_uah || 0)}</div>
+
+              <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl bg-gradient-to-br from-slate-800 to-blue-900/20">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2 bg-blue-500/10 rounded-lg"><ReceiptText className="text-blue-400" size={24} /></div>
+                  <span className="text-slate-400 uppercase text-[10px] font-black tracking-widest">Total Dividends</span>
+                </div>
+                <div className="text-3xl font-mono font-bold text-blue-400 leading-none">{formatUAH(summary?.total_dividends_uah || 0)}</div>
+                <div className="mt-2 text-xs text-slate-500 font-medium">Cumulative gross dividends</div>
               </div>
-              <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                <div className="flex items-center justify-between mb-2"><span className="text-slate-400 uppercase text-xs font-bold tracking-wider">Current Holdings Cost</span><Wallet className="text-slate-300" size={20} /></div>
-                <div className="text-2xl font-bold text-slate-100">{formatUAH(summary?.total_cost_basis_uah || 0)}</div>
+
+              <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl bg-gradient-to-br from-slate-800 to-slate-700/30">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2 bg-slate-500/10 rounded-lg"><Wallet className="text-slate-300" size={24} /></div>
+                  <span className="text-slate-400 uppercase text-[10px] font-black tracking-widest">Holdings Cost</span>
+                </div>
+                <div className="text-3xl font-mono font-bold text-slate-100 leading-none">{formatUAH(summary?.total_cost_basis_uah || 0)}</div>
+                <div className="mt-2 text-xs text-slate-500 font-medium">Total cost basis of open positions</div>
+              </div>
+            </div>
+
+            {/* UA Tax Estimation Section */}
+            <div className="bg-slate-800 rounded-2xl border border-rose-900/30 overflow-hidden shadow-2xl bg-gradient-to-b from-slate-800 to-rose-900/5">
+              <div className="p-5 border-b border-slate-700 flex items-center justify-between">
+                <h2 className="font-bold text-lg flex items-center gap-2 text-rose-400">
+                  <TrendingUp size={20} />
+                  <span>UA Tax Estimation (PIT & Military Tax)</span>
+                </h2>
+                <div className="px-3 py-1 bg-rose-500/10 rounded-full text-[10px] text-rose-400 font-bold uppercase tracking-widest border border-rose-500/20">
+                  Estimated Liabilities
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-slate-700/50 text-sm">
+                {/* Sales Tax */}
+                <div className="bg-slate-800 p-6">
+                  <h3 className="text-slate-400 font-bold text-xs uppercase tracking-wider mb-4">Capital Gains (Stock Sales)</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-700/50">
+                      <span className="text-slate-400 text-xs font-bold uppercase tracking-tighter">Tax Base</span>
+                      <span className="font-mono font-bold text-slate-200">{formatUAH(Math.max(0, summary?.total_realized_profit_uah || 0))}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">PIT (ПДФО) - 18%</span>
+                      <span className="font-mono text-slate-200">{formatUAH(Math.max(0, summary?.total_realized_profit_uah || 0) * 0.18)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-700/50">
+                      <span className="text-slate-500 font-medium">Military Tax (Військовий збір) - 5%</span>
+                      <span className="font-mono text-slate-200">{formatUAH(Math.max(0, summary?.total_realized_profit_uah || 0) * 0.05)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1">
+                      <span className="text-emerald-400 font-bold">Total for Sales</span>
+                      <span className="font-mono font-black text-emerald-400 text-lg">{formatUAH(Math.max(0, summary?.total_realized_profit_uah || 0) * 0.23)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dividend Tax */}
+                <div className="bg-slate-800 p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-slate-400 font-bold text-xs uppercase tracking-wider">Dividends Income</h3>
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <span className="text-[10px] text-slate-500 font-bold group-hover:text-slate-400 transition-colors uppercase">Use Gross Base</span>
+                      <div className="relative inline-flex items-center">
+                        <input 
+                          type="checkbox" 
+                          checked={useGrossTaxBase} 
+                          onChange={() => setUseGrossTaxBase(!useGrossTaxBase)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-7 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+                      </div>
+                    </label>
+                  </div>
+                  {(() => {
+                    const totalTaxUahPaidAbroad = (data?.dividends || []).reduce((acc, d) => acc + (d.tax_uah || (d.tax * d.currency_rate)), 0);
+                    const totalNetDivUah = summary?.total_dividends_uah || 0;
+                    const abroadTaxesAbs = Math.abs(totalTaxUahPaidAbroad);
+                    
+                    // Total Gross = Net Received + Taxes Paid Abroad
+                    const totalGrossDivUah = totalNetDivUah + abroadTaxesAbs;
+                    const taxBase = useGrossTaxBase ? totalGrossDivUah : totalNetDivUah;
+                    
+                    const uaPitUah = taxBase * 0.09;
+                    const uaMilitaryUah = taxBase * 0.05;
+                    const totalUaTaxes = uaPitUah + uaMilitaryUah;
+
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-700/50">
+                          <span className="text-slate-400 text-xs font-bold uppercase tracking-tighter">Tax Base ({useGrossTaxBase ? 'Gross' : 'Net'})</span>
+                          <span className="font-mono font-bold text-slate-200">{formatUAH(taxBase)}</span>
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-500 font-medium">UA PIT (ПДФО) - 9%</span>
+                            <span className="font-mono text-slate-200">{formatUAH(uaPitUah)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-500 font-medium">UA Military Tax - 5%</span>
+                            <span className="font-mono text-slate-200">{formatUAH(uaMilitaryUah)}</span>
+                          </div>
+                          <div className="flex justify-between items-center pt-1 text-[11px]">
+                            <span className="text-blue-400/80 font-bold uppercase tracking-tighter">Total UA Tax Liability</span>
+                            <span className="font-mono font-bold text-blue-400">{formatUAH(totalUaTaxes)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-2 pb-2 border-t border-slate-700/50">
+                          <span className="text-slate-500 font-medium italic">Taxes paid abroad (Already paid)</span>
+                          <span className="font-mono text-rose-400/80">{formatUAH(abroadTaxesAbs)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-2 border-t-2 border-slate-700">
+                          <span className="text-emerald-400 font-bold uppercase text-xs">Net Received (Pre-UA Tax)</span>
+                          <span className="font-mono font-black text-emerald-400 text-xl">{formatUAH(totalGrossDivUah - abroadTaxesAbs)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+              <div className="p-4 bg-slate-900/50 text-[10px] text-slate-500 flex justify-center gap-8 border-t border-slate-700">
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500/50"></div> Combined Rate (Sales): 23%</div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500/50"></div> Combined Rate (Dividends): 14%</div>
               </div>
             </div>
 
             {/* Sells Table */}
-            <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-              <div className="p-4 border-b border-slate-700 bg-emerald-900/20"><h2 className="font-bold text-lg text-emerald-400">Realized Profit (Sales)</h2></div>
+            <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-2xl">
+              <div className="p-5 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
+                <h2 className="font-bold text-lg flex items-center gap-2">
+                  <TrendingUp size={20} className="text-emerald-400" />
+                  <span>Realized Profit (Sales) - Detailed</span>
+                </h2>
+              </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-xs uppercase text-slate-500 bg-slate-900/50">
-                    <tr><th className="p-4">Date</th><th className="p-4">Symbol</th><th className="p-4">Qty</th><th className="p-4">Buy Price</th><th className="p-4">Rate Buy</th><th className="p-4">Sell Price</th><th className="p-4">Rate Sell</th><th className="p-4">Comm.</th><th className="p-4">Profit</th><th className="p-4">Profit UAH</th></tr>
+                <table className="w-full text-left text-[11px] border-collapse">
+                  <thead className="uppercase text-slate-500 bg-slate-900/80 sticky top-0 backdrop-blur-sm">
+                    <tr>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-center">Broker</th>
+                      <th className="p-2 font-semibold border-b border-slate-700">Ticker</th>
+                      <th className="p-2 font-semibold border-b border-slate-700">Date Buy</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Qty Buy</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-center">Curr</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Price Buy</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Comm Buy</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Rate Buy</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right bg-emerald-900/10">Total Buy UAH</th>
+                      <th className="p-2 font-semibold border-b border-slate-700">Date Sell</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Qty Sell</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Price Sell</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Comm Sell</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Rate Sell</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right bg-blue-900/10">Total Sell UAH</th>
+                      <th className="p-2 font-semibold border-b border-slate-700 text-right">Profit UAH</th>
+                      <th className="p-2 font-semibold border-b border-slate-700">Comments</th>
+                    </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-700">
-                    {data?.sells?.map((s, idx) => (
-                      <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
-                        <td className="p-4 text-slate-400">{new Date(s.date).toLocaleDateString()}</td>
-                        <td className="p-4 font-mono font-bold text-blue-300">{s.symbol}</td>
-                        <td className="p-4">{s.quantity.toFixed(4)}</td>
-                        <td className="p-4">{formatCurrency(s.buy_price, s.currency)}</td>
-                        <td className="p-4 text-slate-500">{s.currency_rate_buy.toFixed(4)}</td>
-                        <td className="p-4">{formatCurrency(s.sell_price, s.currency)}</td>
-                        <td className="p-4 text-slate-500">{s.currency_rate_sell.toFixed(4)}</td>
-                        <td className="p-4 text-rose-400">{formatCurrency(s.commission, s.currency)}</td>
-                        <td className={`p-4 font-bold ${s.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(s.profit, s.currency)}</td>
-                        <td className={`p-4 font-bold ${s.profit_uah >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatUAH(s.profit_uah)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  {data?.sells?.length ? (
-                    <tfoot className="bg-slate-900/80 font-bold border-t-2 border-slate-600">
-                      {Object.entries(getCurrencyTotals(data.sells, ['commission', 'profit'])).map(([curr, totals], idx) => (
-                        <tr key={curr} className={idx > 0 ? 'border-t border-slate-700/50' : ''}>
-                          <td className="p-4 text-xs uppercase text-slate-500" colSpan={7}>Total {curr}</td>
-                          <td className="p-4 text-rose-400">{formatCurrency(totals.commission, curr)}</td>
-                          <td className={`p-4 ${totals.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(totals.profit, curr)}</td>
-                          <td className="p-4"></td>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {data?.sells?.map((s, idx) => {
+                      const totalBuyUah = (s.quantity * s.buy_price * s.currency_rate_buy) + s.commission_buy_uah;
+                      const totalSellUah = (s.quantity * s.sell_price * s.currency_rate_sell) - s.commission_sell_uah;
+                      const profitUah = totalSellUah - totalBuyUah;
+
+                      return (
+                        <tr key={idx} className="hover:bg-slate-700/30 transition-all duration-150 group">
+                          <td className="p-2 text-xs">
+                            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md border ${s.broker === 'IBKR' ? 'bg-white border-slate-200' : 'bg-emerald-500 border-emerald-600'}`}>
+                              <img 
+                                src={s.broker === 'IBKR' ? '/ibkr-logo.svg' : '/f24-logo.svg'} 
+                                alt={s.broker} 
+                                className={`h-3 w-auto ${s.broker === 'IBKR' ? '' : 'brightness-0 invert'}`} 
+                              />
+                            </div>
+                          </td>
+                          <td className="p-2 font-mono font-bold text-blue-300 bg-slate-900/20 group-hover:bg-blue-500/10">{s.symbol}</td>
+                          <td className="p-2 text-slate-400 whitespace-nowrap font-mono">{new Date(s.buy_date).toLocaleDateString()}</td>
+                          <td className="p-2 text-right font-mono font-medium">{s.quantity.toFixed(1)}</td>
+                          <td className="p-2 text-slate-500 text-center font-bold">{s.currency}</td>
+                          <td className="p-2 text-right font-mono font-bold">{formatCurrency(s.buy_price, s.currency)}</td>
+                          <td className="p-2 text-right font-mono text-rose-400/80">{formatCurrency(s.commission_buy, s.currency)}</td>
+                          <td className="p-2 text-right text-slate-500 font-mono">{s.currency_rate_buy.toFixed(4)}</td>
+                          <td className="p-2 text-right font-mono font-black text-slate-200 bg-emerald-900/5">{formatUAH(totalBuyUah)}</td>
+                          
+                          <td className="p-2 text-slate-400 whitespace-nowrap font-mono">{new Date(s.date).toLocaleDateString()}</td>
+                          <td className="p-2 text-right font-mono font-medium">{s.quantity.toFixed(1)}</td>
+                          <td className="p-2 text-right font-mono font-bold">{formatCurrency(s.sell_price, s.currency)}</td>
+                          <td className="p-2 text-right font-mono text-rose-400/80">{formatCurrency(s.commission_sell, s.currency)}</td>
+                          <td className="p-2 text-right text-slate-500 font-mono">{s.currency_rate_sell.toFixed(4)}</td>
+                          <td className="p-2 text-right font-mono font-black text-slate-200 bg-blue-900/5">{formatUAH(totalSellUah)}</td>
+                          
+                          <td className={`p-2 text-right font-mono font-black border-l border-slate-700/50 bg-slate-900/10 ${profitUah >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {formatUAH(profitUah)}
+                          </td>
+                          <td className="p-2 text-slate-500 italic max-w-[120px] truncate font-mono" title={s.comment}>{s.comment}</td>
                         </tr>
-                      ))}
-                      <tr className="bg-slate-900 border-t-2 border-slate-600">
-                        <td className="p-4 text-xs uppercase text-slate-400" colSpan={9}>Grand Total (UAH)</td>
-                        <td className={`p-4 ${summary?.total_realized_profit_uah && summary.total_realized_profit_uah >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {formatUAH(summary?.total_realized_profit_uah || 0)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  ) : null}
-                  {!data?.sells?.length && (<tbody><tr><td colSpan={10} className="p-8 text-center text-slate-500">No sales recorded.</td></tr></tbody>)}
+                      );
+                    })}
+                  </tbody>
+                  {!data?.sells?.length && (<tbody><tr><td colSpan={17} className="p-12 text-center text-slate-500 italic font-mono">No sale transactions found for this period.</td></tr></tbody>)}
                 </table>
               </div>
             </div>
 
+            {/* Sells Summary Table */}
+            {data?.sells?.length ? (
+              <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-2xl">
+                <div className="p-5 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
+                  <h2 className="font-bold text-lg flex items-center gap-2">
+                    <LayoutDashboard size={20} className="text-emerald-400" />
+                    <span>Realized Profit - Ticker Summary</span>
+                  </h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-[13px] border-collapse">
+                    <thead className="uppercase text-slate-500 bg-slate-900/80">
+                      <tr>
+                        <th className="p-4 font-semibold border-b border-slate-700">Symbol</th>
+                        <th className="p-4 font-semibold border-b border-slate-700 text-right">Total Qty</th>
+                        <th className="p-4 font-semibold border-b border-slate-700 text-right">Total Buy UAH</th>
+                        <th className="p-4 font-semibold border-b border-slate-700 text-right">Fees Buy</th>
+                        <th className="p-4 font-semibold border-b border-slate-700 text-right">Total Buy with Fees</th>
+                        <th className="p-4 font-semibold border-b border-slate-700 text-right">Total Sell UAH</th>
+                        <th className="p-4 font-semibold border-b border-slate-700 text-right">Fees Sell</th>
+                        <th className="p-4 font-semibold border-b border-slate-700 text-right">Total Sell with Fees</th>
+                        <th className="p-4 font-semibold border-b border-slate-700 text-right">Total Profit UAH</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {Object.values((data?.sells || []).reduce((acc, s) => {
+                        const key = s.symbol;
+                        if (!acc[key]) acc[key] = { symbol: s.symbol, quantity: 0, buyUah: 0, sellUah: 0, commBuyUah: 0, commSellUah: 0, taxUah: 0 };
+                        acc[key].quantity += s.quantity;
+                        acc[key].buyUah += (s.quantity * s.buy_price * s.currency_rate_buy);
+                        acc[key].sellUah += (s.quantity * s.sell_price * s.currency_rate_sell);
+                        acc[key].commBuyUah += s.commission_buy_uah;
+                        acc[key].commSellUah += s.commission_sell_uah;
+                        acc[key].taxUah += s.tax_uah;
+                        return acc;
+                      }, {} as Record<string, { symbol: string, quantity: number, buyUah: number, sellUah: number, commBuyUah: number, commSellUah: number, taxUah: number }>)).map((s, idx) => {
+                        const buyTotalWithFees = s.buyUah + s.commBuyUah;
+                        const sellTotalWithFees = s.sellUah - s.commSellUah - s.taxUah;
+                        const profitUah = sellTotalWithFees - buyTotalWithFees;
+                        return (
+                          <tr key={idx} className="hover:bg-slate-700/30 transition-all duration-150 group">
+                            <td className="p-4 font-mono font-bold text-blue-300 group-hover:text-blue-200">{s.symbol}</td>
+                            <td className="p-4 text-right font-mono">{s.quantity.toFixed(1)}</td>
+                            <td className="p-4 text-right text-slate-300 font-mono">{formatUAH(s.buyUah)}</td>
+                            <td className="p-4 text-right text-rose-400/60 font-mono">{formatUAH(s.commBuyUah)}</td>
+                            <td className="p-4 text-right text-slate-400 font-mono font-bold">{formatUAH(buyTotalWithFees)}</td>
+                            <td className="p-4 text-right text-slate-300 font-mono">{formatUAH(s.sellUah)}</td>
+                            <td className="p-4 text-right text-rose-400/60 font-mono">{formatUAH(s.commSellUah + s.taxUah)}</td>
+                            <td className="p-4 text-right text-slate-400 font-mono font-bold">{formatUAH(sellTotalWithFees)}</td>
+                            <td className={`p-4 text-right font-mono font-black text-base ${profitUah >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {formatUAH(profitUah)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-slate-900 font-bold border-t-2 border-slate-600">
+                      {(() => {
+                        const sells = Object.values((data?.sells || []).reduce((acc, s) => {
+                          const key = s.symbol;
+                          if (!acc[key]) acc[key] = { buyUah: 0, sellUah: 0, commBuyUah: 0, commSellUah: 0, taxUah: 0 };
+                          acc[key].buyUah += (s.quantity * s.buy_price * s.currency_rate_buy);
+                          acc[key].sellUah += (s.quantity * s.sell_price * s.currency_rate_sell);
+                          acc[key].commBuyUah += s.commission_buy_uah;
+                          acc[key].commSellUah += s.commission_sell_uah;
+                          acc[key].taxUah += s.tax_uah;
+                          return acc;
+                        }, {} as Record<string, { buyUah: number, sellUah: number, commBuyUah: number, commSellUah: number, taxUah: number }>));
+
+                        const totalFees = sells.reduce((acc, s) => acc + (s.commBuyUah + s.commSellUah + s.taxUah), 0);
+                        const totalGrossProfit = sells.reduce((acc, s) => acc + (s.sellUah - s.buyUah), 0);
+                        const totalNetProfit = totalGrossProfit - totalFees;
+
+                        return (
+                          <>
+                            <tr className="bg-slate-950/30">
+                              <td className="p-4 text-xs uppercase text-slate-500 tracking-widest" colSpan={8}>Total Fees</td>
+                              <td className="p-4 text-right font-mono text-rose-400/80">{formatUAH(totalFees)}</td>
+                            </tr>
+                            <tr className="bg-slate-950/30">
+                              <td className="p-4 text-xs uppercase text-slate-500 tracking-widest" colSpan={8}>Total without fee</td>
+                              <td className="p-4 text-right font-mono text-slate-300">{formatUAH(totalGrossProfit)}</td>
+                            </tr>
+                            <tr className="bg-slate-950/50 border-t-2 border-slate-600">
+                              <td className="p-5 text-xs uppercase text-slate-400 tracking-widest" colSpan={8}>Consolidated Grand Total</td>
+                              <td className={`p-5 text-right font-mono text-xl ${totalNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {formatUAH(totalNetProfit)}
+                              </td>
+                            </tr>
+                          </>
+                        );
+                      })()}
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
             {/* Dividends Table */}
-            <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-              <div className="p-4 border-b border-slate-700 bg-blue-900/20"><h2 className="font-bold text-lg text-blue-400">Dividends Received</h2></div>
+            <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-2xl">
+              <div className="p-5 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
+                <h2 className="font-bold text-lg flex items-center gap-2">
+                  <ReceiptText size={20} className="text-blue-400" />
+                  <span>Dividends Received</span>
+                </h2>
+              </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-xs uppercase text-slate-500 bg-slate-900/50">
-                    <tr><th className="p-4">Date</th><th className="p-4">Symbol</th><th className="p-4">Gross</th><th className="p-4">Withholding Tax</th><th className="p-4">Net</th><th className="p-4">Rate</th><th className="p-4">Net UAH</th></tr>
+                <table className="w-full text-left text-[13px] border-collapse">
+                  <thead className="uppercase text-slate-500 bg-slate-900/80 sticky top-0 backdrop-blur-sm">
+                    <tr>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-center">Broker</th>
+                      <th className="p-4 font-semibold border-b border-slate-700">Date</th>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-center">Symbol</th>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-right">Gross</th>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-right">Tax</th>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-right">Net</th>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-right">Rate</th>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-right">Tax UAH</th>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-right">Net UAH</th>
+                      <th className="p-4 font-semibold border-b border-slate-700 text-right">Gross UAH</th>
+                    </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-700">
+                  <tbody className="divide-y divide-slate-700/50">
                     {data?.dividends?.map((d, idx) => (
-                      <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
-                        <td className="p-4 text-slate-400">{new Date(d.date).toLocaleDateString()}</td>
-                        <td className="p-4 font-mono font-bold text-blue-300">{d.symbol}</td>
-                        <td className="p-4">{formatCurrency(d.gross_amount || d.net_amount + d.tax, d.currency)}</td>
-                        <td className="p-4 text-rose-400">{formatCurrency(d.tax, d.currency)}</td>
-                        <td className="p-4 text-blue-400 font-bold">{formatCurrency(d.net_amount, d.currency)}</td>
-                        <td className="p-4 text-slate-500">{d.currency_rate.toFixed(4)}</td>
-                        <td className="p-4 text-blue-400 font-bold">{formatUAH(d.amount_uah)}</td>
+                      <tr key={idx} className="hover:bg-slate-700/30 transition-all group">
+                        <td className="p-4 text-xs">
+                          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md border inline-flex ${d.broker === 'IBKR' ? 'bg-white border-slate-200' : 'bg-emerald-500 border-emerald-600'}`}>
+                            <img 
+                              src={d.broker === 'IBKR' ? '/ibkr-logo.svg' : '/f24-logo.svg'} 
+                              alt={d.broker} 
+                              className={`h-3 w-auto ${d.broker === 'IBKR' ? '' : 'brightness-0 invert'}`} 
+                            />
+                          </div>
+                        </td>
+                        <td className="p-4 text-slate-400 font-mono whitespace-nowrap">{new Date(d.date).toLocaleDateString()}</td>
+                        <td className="p-4 font-mono font-bold text-blue-300 text-center">{d.symbol}</td>
+                        <td className="p-4 text-right font-mono">{formatCurrency(d.gross_amount || d.net_amount + d.tax, d.currency)}</td>
+                        <td className="p-4 text-right text-rose-400/80 font-mono">{formatCurrency(d.tax, d.currency)}</td>
+                        <td className="p-4 text-right text-blue-400 font-mono font-bold">{formatCurrency(d.net_amount, d.currency)}</td>
+                        <td className="p-4 text-right text-slate-500 font-mono">{d.currency_rate.toFixed(4)}</td>
+                        <td className="p-4 text-right text-rose-400/80 font-mono">{formatUAH(d.tax_uah)}</td>
+                        <td className="p-4 text-right text-blue-400 font-mono font-black">{formatUAH(d.amount_uah)}</td>
+                        <td className="p-4 text-right text-blue-400 font-mono font-black">{formatUAH(d.gross_amount_uah)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -293,18 +583,29 @@ const App: React.FC = () => {
                     <tfoot className="bg-slate-900/80 font-bold border-t-2 border-slate-600">
                       {Object.entries(getCurrencyTotals(data.dividends, ['tax', 'net_amount'])).map(([curr, totals], idx) => (
                         <tr key={curr} className={idx > 0 ? 'border-t border-slate-700/50' : ''}>
-                          <td className="p-4 text-xs uppercase text-slate-500" colSpan={3}>Total {curr}</td>
-                          <td className="p-4 text-rose-400">{formatCurrency(totals.tax, curr)}</td>
-                          <td className="p-4 text-blue-400 font-bold" colSpan={3}>{formatCurrency(totals.net_amount, curr)}</td>
+                          <td className="p-4 text-[10px] uppercase text-slate-500 tracking-tighter font-black" colSpan={4}>Total {curr}</td>
+                          <td className="p-4 text-right text-rose-400/80 font-mono">{formatCurrency(totals.tax, curr)}</td>
+                          <td className="p-4 text-right text-blue-400 font-mono font-bold" colSpan={5}>{formatCurrency(totals.net_amount, curr)}</td>
                         </tr>
                       ))}
-                      <tr className="bg-slate-900 border-t-2 border-slate-600">
-                        <td className="p-4 text-xs uppercase text-slate-400" colSpan={6}>Grand Total (UAH)</td>
-                        <td className="p-4 text-blue-400 font-bold">{formatUAH(summary?.total_dividends_uah || 0)}</td>
-                      </tr>
+                      {(() => {
+                        const totalTaxUah = data.dividends.reduce((acc, d) => acc + (d.tax_uah || (d.tax * d.currency_rate)), 0);
+                        const totalNetUah = data.dividends.reduce((acc, d) => acc + d.amount_uah, 0);
+                        const totalGrossUah = data.dividends.reduce((acc, d) => acc + (d.gross_amount_uah || (d.amount_uah - (d.tax * d.currency_rate))), 0);
+                        return (
+                          <>
+                            <tr className="bg-slate-950/50 border-t-2 border-slate-600">
+                              <td className="p-5 text-xs uppercase text-slate-400 tracking-widest" colSpan={7}>Grand Totals (UAH)</td>
+                              <td className="p-5 text-right text-rose-400/80 font-mono">{formatUAH(totalTaxUah)}</td>
+                              <td className="p-5 text-right text-blue-400 font-mono font-black">{formatUAH(totalNetUah)}</td>
+                              <td className="p-5 text-right text-blue-400 font-mono text-xl">{formatUAH(totalGrossUah)}</td>
+                            </tr>
+                          </>
+                        );
+                      })()}
                     </tfoot>
                   ) : null}
-                  {!data?.dividends?.length && (<tbody><tr><td colSpan={7} className="p-8 text-center text-slate-500">No dividends recorded.</td></tr></tbody>)}
+                  {!data?.dividends?.length && (<tbody><tr><td colSpan={8} className="p-12 text-center text-slate-500 italic">No dividends recorded.</td></tr></tbody>)}
                 </table>
               </div>
             </div>
@@ -398,6 +699,32 @@ const App: React.FC = () => {
           </div>
         )}
       </main>
+
+      {/* Upload Success Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-800 border border-slate-700 rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              <div className="mx-auto w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6">
+                <TrendingUp size={32} className="text-emerald-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Import Complete</h3>
+              <p className="text-slate-400 text-sm mb-8">
+                Successfully processed <span className="text-emerald-400 font-mono font-bold text-lg">{uploadStats?.count}</span> transactions from your report.
+              </p>
+              <button 
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setActiveTab('dashboard');
+                }}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98]"
+              >
+                Go to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

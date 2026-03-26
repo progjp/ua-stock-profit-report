@@ -78,7 +78,12 @@ func handleUpload(c *gin.Context) {
 		}
 		
 		if tx.TotalAmount == 0 {
-			tx.TotalAmount = (tx.Quantity * tx.Price) - tx.Commission
+			if tx.Type == models.Sell {
+				// (Qty * Price) is in trade currency. Commission/Tax are also treated as trade currency here
+				tx.TotalAmount = (tx.Quantity * tx.Price) - tx.Commission - tx.Tax
+			} else {
+				tx.TotalAmount = (tx.Quantity * tx.Price) + tx.Commission + tx.Tax
+			}
 		}
 		tx.AmountUAH = tx.TotalAmount * tx.NBURate
 

@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+dist
+frontend/dist
+.git
+.vscode
+.idea
+*.db
+*.json
+*.csv
+!package.json
+!package-lock.json
+!go.mod
+!go.sum

@@ -134,9 +134,10 @@ func (i *IBKRImporter) parseTradeRow(header []string, row []string) (models.Tran
 		totalAmount = -totalAmount // Cash inflow
 	}
 
+	symbol := normalizeTicker(row[symbolIdx])
 	return models.Transaction{
 		Broker:      models.IBKR,
-		Symbol:      row[symbolIdx],
+		Symbol:      symbol,
 		Type:        txType,
 		Date:        date,
 		Quantity:    qty,
@@ -144,7 +145,7 @@ func (i *IBKRImporter) parseTradeRow(header []string, row []string) (models.Tran
 		Currency:    row[currIdx],
 		Commission:  comm,
 		TotalAmount: totalAmount,
-		ExternalID:  fmt.Sprintf("IBKR-TR-%s-%s-%f", row[symbolIdx], dateStr, qty),
+		ExternalID:  fmt.Sprintf("IBKR-TR-%s-%s-%f", symbol, dateStr, qty),
 	}, nil
 }
 
@@ -169,6 +170,11 @@ func (i *IBKRImporter) parseDividendRow(header []string, row []string) (models.T
 	gross, _ := strconv.ParseFloat(strings.ReplaceAll(row[grossAmountIdx], "\"", ""), 64)
 	tax, _ := strconv.ParseFloat(strings.ReplaceAll(row[taxIdx], "\"", ""), 64)
 	
+	// Standardize tax to absolute positive value
+	if tax < 0 {
+		tax = -tax
+	}
+	
 	dateStr := strings.ReplaceAll(row[dateIdx], "\"", "")
 	date, _ := time.Parse("20060102", dateStr)
 
@@ -181,15 +187,16 @@ func (i *IBKRImporter) parseDividendRow(header []string, row []string) (models.T
 	// However, to keep it simple, if Tax is present in the same row, 
 	// let's ensure the calculator knows how to handle a single Dividend row with Tax.
 	
+	symbol := normalizeTicker(row[symbolIdx])
 	return models.Transaction{
 		Broker:      models.IBKR,
-		Symbol:      row[symbolIdx],
+		Symbol:      symbol,
 		Type:        models.Dividend,
 		Date:        date,
 		TotalAmount: net,
 		Tax:         tax, // New field usage
 		Currency:    row[currIdx],
-		ExternalID:  fmt.Sprintf("IBKR-DIV-%s-%s-%f", row[symbolIdx], dateStr, net),
+		ExternalID:  fmt.Sprintf("IBKR-DIV-%s-%s-%f", symbol, dateStr, net),
 	}, nil
 }
 

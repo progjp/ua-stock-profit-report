@@ -29,15 +29,18 @@ type F24Trade struct {
 	Quantity   interface{} `json:"q"`
 	Commission interface{} `json:"commission"`
 	Currency   string      `json:"curr_c"`
+	Comment    string      `json:"comment"`
 }
 
 type F24CorporateAction struct {
-	Date      string      `json:"date"`
-	TypeID    string      `json:"type_id"`
-	Ticker    string      `json:"ticker"`
-	Amount    interface{} `json:"amount"`
-	Currency  string      `json:"currency"`
-	TaxAmount interface{} `json:"tax_amount"`
+	Date        string      `json:"date"`
+	TypeID      string      `json:"type_id"`
+	Ticker      string      `json:"ticker"`
+	Amount      interface{} `json:"amount"`
+	Currency    string      `json:"currency"`
+	TaxAmount   interface{} `json:"tax_amount"`
+	ExternalTax interface{} `json:"external_tax"`
+	Comment     string      `json:"comment"`
 }
 
 func (f *FreedomFinanceImporter) Parse(reader io.Reader) ([]models.Transaction, error) {
@@ -66,10 +69,11 @@ func (f *FreedomFinanceImporter) Parse(reader io.Reader) ([]models.Transaction, 
 		commission := f.toFloat(raw.Commission)
 
 		date, _ := time.Parse("2006-01-02 15:04:05", raw.Date)
+		symbol := normalizeTicker(raw.Symbol)
 
 		transactions = append(transactions, models.Transaction{
 			Broker:     models.FreedomFinance,
-			Symbol:     raw.Symbol,
+			Symbol:     symbol,
 			Type:       txType,
 			Date:       date,
 			Quantity:   qty,
@@ -77,6 +81,7 @@ func (f *FreedomFinanceImporter) Parse(reader io.Reader) ([]models.Transaction, 
 			Currency:   raw.Currency,
 			Commission: commission,
 			ExternalID: fmt.Sprintf("F24-TR-%d", raw.TradeID),
+			Comment:    raw.Comment,
 		})
 	}
 
@@ -87,32 +92,32 @@ func (f *FreedomFinanceImporter) Parse(reader io.Reader) ([]models.Transaction, 
 		}
 
 		amount := f.toFloat(raw.Amount)
+		// Check both tax fields. Freedom24 uses different ones depending on the region/asset.
 		tax := f.toFloat(raw.TaxAmount)
+		if tax == 0 {
+			tax = f.toFloat(raw.ExternalTax)
+		}
+		
+		// Ensure tax is absolute positive for standardized processing
+		if tax < 0 {
+			tax = -tax
+		}
+		
 		date, _ := time.Parse("2006-01-02", raw.Date)
+		symbol := normalizeTicker(raw.Ticker)
 
 		// Dividend Transaction
 		transactions = append(transactions, models.Transaction{
 			Broker:      models.FreedomFinance,
-			Symbol:      raw.Ticker,
+			Symbol:      symbol,
 			Type:        models.Dividend,
 			Date:        date,
 			TotalAmount: amount,
+			Tax:         tax, // Standardized positive tax
 			Currency:    raw.Currency,
-			ExternalID:  fmt.Sprintf("F24-DIV-%s-%s-%f", raw.Ticker, raw.Date, amount),
+			ExternalID:  fmt.Sprintf("F24-DIV-%s-%s-%f", symbol, raw.Date, amount),
+			Comment:     raw.Comment,
 		})
-
-		// Tax Transaction (if any)
-		if tax != 0 {
-			transactions = append(transactions, models.Transaction{
-				Broker:      models.FreedomFinance,
-				Symbol:      raw.Ticker,
-				Type:        models.Tax,
-				Date:        date,
-				TotalAmount: tax, 
-				Currency:    raw.Currency,
-				ExternalID:  fmt.Sprintf("F24-TAX-%s-%s-%f", raw.Ticker, raw.Date, tax),
-			})
-		}
 	}
 
 	fmt.Printf("Freedom Finance Import: Parsed %d transactions\n", len(transactions))

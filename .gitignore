@@ -18,6 +18,11 @@ bin/
 # Project specific
 stocks
 stocks.db
+*.db
+
+# Docker
+.docker/
+
 
 # Reports and temporary data (often sensitive)
 *.csv

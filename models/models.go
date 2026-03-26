@@ -38,6 +38,7 @@ type Transaction struct {
 	ExternalID  string          `json:"external_id" gorm:"uniqueIndex"` 
 	NBURate     float64         `json:"nbu_rate"`     // Rate on transaction date
 	AmountUAH   float64         `json:"amount_uah"`   // TotalAmount * NBURate
+	Comment     string          `json:"comment"`
 }
 
 type Holding struct {
@@ -55,24 +56,35 @@ type Holding struct {
 }
 
 type SellReport struct {
+	Broker           Broker    `json:"broker"`
 	Symbol           string    `json:"symbol"`
-	Date             time.Time `json:"date"`
+	Date             time.Time `json:"date"` // Sell Date
+	BuyDate          time.Time `json:"buy_date"`
 	Quantity         float64   `json:"quantity"`
 	BuyPrice         float64   `json:"buy_price"`
 	SellPrice        float64   `json:"sell_price"`
-	Commission       float64   `json:"commission"`
+	CommissionBuy    float64   `json:"commission_buy"`
+	CommissionSell   float64   `json:"commission_sell"`
+	CommissionBuyUAH float64   `json:"commission_buy_uah"`
+	CommissionSellUAH float64  `json:"commission_sell_uah"`
+	Tax              float64   `json:"tax"`
+	TaxUAH           float64   `json:"tax_uah"`
 	Profit           float64   `json:"profit"`
 	ProfitUAH        float64   `json:"profit_uah"`
 	Currency         string    `json:"currency"`
 	CurrencyRateBuy  float64   `json:"currency_rate_buy"`
 	CurrencyRateSell float64   `json:"currency_rate_sell"`
+	Comment          string    `json:"comment"`
 }
 
 type DividendReport struct {
+	Broker       Broker    `json:"broker"`
 	Symbol       string    `json:"symbol"`
 	Date         time.Time `json:"date"`
 	GrossAmount  float64   `json:"gross_amount"`
+	GrossAmountUAH float64 `json:"gross_amount_uah"`
 	Tax          float64   `json:"tax"`
+	TaxUAH       float64   `json:"tax_uah"`
 	NetAmount    float64   `json:"net_amount"`
 	AmountUAH    float64   `json:"amount_uah"`
 	Currency     string    `json:"currency"`

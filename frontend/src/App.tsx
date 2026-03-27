@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { Upload, LayoutDashboard, History, DollarSign, TrendingUp, ReceiptText, Wallet } from 'lucide-react';
@@ -129,9 +129,11 @@ const App: React.FC = () => {
   const [fromDate, setFromDate] = useState<string>(`${currentYear}-01-01`);
   const [toDate, setToDate] = useState<string>(`${currentYear}-12-31`);
 
-  useEffect(() => { fetchData().finally(() => setInitialLoading(false)); }, [fromDate, toDate]);
+  useEffect(() => { 
+    fetchData().finally(() => setInitialLoading(false)); 
+  }, [fetchData]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const params = { from: fromDate, to: toDate };
       const [sumRes, holdRes, txRes] = await Promise.all([
@@ -143,7 +145,7 @@ const App: React.FC = () => {
       setData(holdRes.data);
       setTransactions(txRes.data);
     } catch (err) { console.error('Error fetching data', err); }
-  };
+  }, [fromDate, toDate]);
 
   const handleYearChange = (year: string) => {
     if (year === 'all') {
@@ -167,7 +169,7 @@ const App: React.FC = () => {
       setUploadStats(res.data);
       setShowUploadModal(true);
       fetchData();
-    } catch (err) { alert('Upload failed'); } finally { setLoading(false); }
+    } catch { alert('Upload failed'); } finally { setLoading(false); }
   };
 
   if (initialLoading) {
@@ -703,7 +705,7 @@ const App: React.FC = () => {
             <div className="bg-slate-800 p-8 rounded-xl border border-slate-700 shadow-lg">
               <h2 className="text-2xl font-bold mb-6 flex items-center space-x-2"><Upload className="text-blue-400" /><span>{t('upload.import_data')}</span></h2>
               <form onSubmit={handleUpload} className="space-y-6">
-                <div><label className="block text-sm font-medium text-slate-400 mb-2">{t('upload.broker_provider')}</label><select value={selectedBroker} onChange={(e) => setSelectedBroker(e.target.value as any)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none transition-all"><option value="IBKR">{t('upload.ibkr_option')}</option><option value="FreedomFinance">{t('upload.freedom_finance_option')}</option></select></div>
+                <div><label className="block text-sm font-medium text-slate-400 mb-2">{t('upload.broker_provider')}</label><select value={selectedBroker} onChange={(e) => setSelectedBroker(e.target.value as 'IBKR' | 'FreedomFinance')} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none transition-all"><option value="IBKR">{t('upload.ibkr_option')}</option><option value="FreedomFinance">{t('upload.freedom_finance_option')}</option></select></div>
                 <div><label className="block text-sm font-medium text-slate-400 mb-2">{t('upload.select_report_file')}</label><input type="file" accept={selectedBroker === 'IBKR' ? '.csv' : '.json,.csv'} onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" /></div>
                 <button type="submit" disabled={!file || loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center space-x-2">{loading ? <div className="flex items-center space-x-2"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div><span>{t('upload.importing')}</span></div> : <><Upload size={20} /><span>{t('upload.process_button')}</span></>}</button>
               </form>

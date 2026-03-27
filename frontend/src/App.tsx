@@ -125,6 +125,7 @@ const App: React.FC = () => {
 
   // Date range state
   const currentYear = new Date().getFullYear().toString();
+  const yearOptions = Array.from({ length: new Date().getFullYear() - 2023 + 1 }, (_, i) => (new Date().getFullYear() - i).toString());
   const [fromDate, setFromDate] = useState<string>(`${currentYear}-01-01`);
   const [toDate, setToDate] = useState<string>(`${currentYear}-12-31`);
 
@@ -170,7 +171,7 @@ const App: React.FC = () => {
   };
 
   if (initialLoading) {
-    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-blue-400">Loading portfolio...</div>;
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-blue-400">{t('common.loading')}</div>;
   }
 
   return (
@@ -211,10 +212,9 @@ const App: React.FC = () => {
                   value={fromDate === '' ? 'all' : fromDate.substring(0, 4)}
                 >
                   <option value="all">{t('common.all_time')}</option>
-                  <option value="2026">2026</option>
-                  <option value="2025">2025</option>
-                  <option value="2024">2024</option>
-                  <option value="2023">2023</option>
+                  {yearOptions.map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-center space-x-2">
@@ -224,7 +224,7 @@ const App: React.FC = () => {
                   onChange={(e) => setFromDate(e.target.value)}
                   className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <span className="text-slate-500">to</span>
+                <span className="text-slate-500">{t('common.to')}</span>
                 <input 
                   type="date" 
                   value={toDate} 
@@ -661,17 +661,16 @@ const App: React.FC = () => {
             {/* Date Range Selector */}
             <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap items-center gap-4">
               <div className="flex items-center space-x-2">
-                <span className="text-sm font-bold text-slate-400 uppercase">Reporting Period:</span>
+                <span className="text-sm font-bold text-slate-400 uppercase">{t('common.reporting_period')}:</span>
                 <select 
                   className="bg-slate-900 border border-slate-700 rounded px-3 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
                   onChange={(e) => handleYearChange(e.target.value)}
                   value={fromDate === '' ? 'all' : fromDate.substring(0, 4)}
                 >
-                  <option value="all">All Time</option>
-                  <option value="2026">2026</option>
-                  <option value="2025">2025</option>
-                  <option value="2024">2024</option>
-                  <option value="2023">2023</option>
+                  <option value="all">{t('common.all_time')}</option>
+                  {yearOptions.map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-center space-x-2">
@@ -681,7 +680,7 @@ const App: React.FC = () => {
                   onChange={(e) => setFromDate(e.target.value)}
                   className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <span className="text-slate-500">to</span>
+                <span className="text-slate-500">{t('common.to')}</span>
                 <input 
                   type="date" 
                   value={toDate} 
@@ -692,8 +691,9 @@ const App: React.FC = () => {
             </div>
 
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-            <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center"><h2 className="font-bold text-lg">Transaction History</h2></div>
-            <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500 bg-slate-900/50"><tr><th className="p-4">Date</th><th className="p-4">Broker</th><th className="p-4">Symbol</th><th className="p-4">Type</th><th className="p-4">Qty</th><th className="p-4">Price</th><th className="p-4">NBU Rate</th><th className="p-4">Total UAH</th></tr></thead><tbody className="divide-y divide-slate-700">{transactions?.map((tx) => (<tr key={tx.ID} className="hover:bg-slate-700/30 transition-colors"><td className="p-4 whitespace-nowrap text-slate-400">{new Date(tx.date).toLocaleDateString()}</td><td className="p-4 text-xs"><span className={`px-2 py-1 rounded ${tx.broker === 'IBKR' ? 'bg-indigo-900 text-indigo-200' : 'bg-orange-900 text-orange-200'}`}>{tx.broker}</span></td><td className="p-4 font-mono font-bold text-blue-300">{tx.symbol}</td><td className="p-4"><span className={`font-bold ${tx.type === 'BUY' ? 'text-blue-400' : tx.type === 'SELL' ? 'text-emerald-400' : tx.type === 'DIVIDEND' ? 'text-purple-400' : 'text-slate-400'}`}>{tx.type}</span></td><td className="p-4">{tx.quantity || '-'}</td><td className="p-4">{tx.price ? formatCurrency(tx.price, tx.currency) : '-'}</td><td className="p-4 text-slate-500">{tx.nbu_rate?.toFixed(2) || '-'}</td><td className="p-4 font-bold">{tx.amount_uah ? formatUAH(tx.amount_uah) : '-'}</td></tr>))}</tbody></table></div>
+            <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center"><h2 className="font-bold text-lg">{t('history.title')}</h2></div>
+            <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs uppercase text-slate-500 bg-slate-900/50"><tr><th className="p-4">{t('tables.columns.date')}</th><th className="p-4">{t('tables.columns.broker')}</th><th className="p-4">{t('tables.columns.symbol')}</th><th className="p-4">{t('tables.columns.type')}</th><th className="p-4">{t('tables.columns.qty')}</th><th className="p-4">{t('tables.columns.price')}</th><th className="p-4">{t('tables.columns.nbu_rate')}</th><th className="p-4">{t('tables.columns.total_uah')}</th></tr></thead>
+<tbody className="divide-y divide-slate-700">{transactions?.map((tx) => (<tr key={tx.ID} className="hover:bg-slate-700/30 transition-colors"><td className="p-4 whitespace-nowrap text-slate-400">{new Date(tx.date).toLocaleDateString()}</td><td className="p-4 text-xs"><span className={`px-2 py-1 rounded ${tx.broker === 'IBKR' ? 'bg-indigo-900 text-indigo-200' : 'bg-orange-900 text-orange-200'}`}>{tx.broker}</span></td><td className="p-4 font-mono font-bold text-blue-300">{tx.symbol}</td><td className="p-4"><span className={`font-bold ${tx.type === 'BUY' ? 'text-blue-400' : tx.type === 'SELL' ? 'text-emerald-400' : tx.type === 'DIVIDEND' ? 'text-purple-400' : 'text-slate-400'}`}>{tx.type}</span></td><td className="p-4">{tx.quantity || '-'}</td><td className="p-4">{tx.price ? formatCurrency(tx.price, tx.currency) : '-'}</td><td className="p-4 text-slate-500">{tx.nbu_rate?.toFixed(2) || '-'}</td><td className="p-4 font-bold">{tx.amount_uah ? formatUAH(tx.amount_uah) : '-'}</td></tr>))}</tbody></table></div>
           </div>
           </div>
         )}
@@ -701,13 +701,13 @@ const App: React.FC = () => {
         {activeTab === 'upload' && (
           <div className="max-w-md mx-auto">
             <div className="bg-slate-800 p-8 rounded-xl border border-slate-700 shadow-lg">
-              <h2 className="text-2xl font-bold mb-6 flex items-center space-x-2"><Upload className="text-blue-400" /><span>Import Data</span></h2>
+              <h2 className="text-2xl font-bold mb-6 flex items-center space-x-2"><Upload className="text-blue-400" /><span>{t('upload.import_data')}</span></h2>
               <form onSubmit={handleUpload} className="space-y-6">
-                <div><label className="block text-sm font-medium text-slate-400 mb-2">Broker Provider</label><select value={selectedBroker} onChange={(e) => setSelectedBroker(e.target.value as any)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none transition-all"><option value="IBKR">Interactive Brokers (Activity Flex Report CSV)</option><option value="FreedomFinance">Freedom Finance (F24 Account Statement JSON)</option></select></div>
-                <div><label className="block text-sm font-medium text-slate-400 mb-2">Select Report File</label><input type="file" accept={selectedBroker === 'IBKR' ? '.csv' : '.json,.csv'} onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" /></div>
-                <button type="submit" disabled={!file || loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center space-x-2">{loading ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> : <><Upload size={20} /><span>Process Report</span></>}</button>
+                <div><label className="block text-sm font-medium text-slate-400 mb-2">{t('upload.broker_provider')}</label><select value={selectedBroker} onChange={(e) => setSelectedBroker(e.target.value as any)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none transition-all"><option value="IBKR">{t('upload.ibkr_option')}</option><option value="FreedomFinance">{t('upload.freedom_finance_option')}</option></select></div>
+                <div><label className="block text-sm font-medium text-slate-400 mb-2">{t('upload.select_report_file')}</label><input type="file" accept={selectedBroker === 'IBKR' ? '.csv' : '.json,.csv'} onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" /></div>
+                <button type="submit" disabled={!file || loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center space-x-2">{loading ? <div className="flex items-center space-x-2"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div><span>{t('upload.importing')}</span></div> : <><Upload size={20} /><span>{t('upload.process_button')}</span></>}</button>
               </form>
-              <div className="mt-12 pt-8 border-t border-slate-700"><h3 className="text-rose-400 font-bold mb-4 flex items-center space-x-2"><span>Danger Zone</span></h3><button onClick={async () => { if (confirm('Clear all imported data?')) { await axios.delete(`${API_URL}/transactions`); fetchData(); alert('Database cleared'); } }} className="w-full bg-transparent border border-rose-900 hover:bg-rose-900/20 text-rose-400 font-bold py-2 px-6 rounded-lg transition-colors">Clear All Data</button></div>
+              <div className="mt-12 pt-8 border-t border-slate-700"><h3 className="text-rose-400 font-bold mb-4 flex items-center space-x-2"><span>{t('upload.danger_zone')}</span></h3><button onClick={async () => { if (confirm('Clear all imported data?')) { await axios.delete(`${API_URL}/transactions`); fetchData(); alert('Database cleared'); } }} className="w-full bg-transparent border border-rose-900 hover:bg-rose-900/20 text-rose-400 font-bold py-2 px-6 rounded-lg transition-colors">{t('upload.clear_all_data')}</button></div>
             </div>
           </div>
         )}
@@ -721,9 +721,9 @@ const App: React.FC = () => {
               <div className="mx-auto w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6">
                 <TrendingUp size={32} className="text-emerald-400" />
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">Import Complete</h3>
+              <h3 className="text-xl font-bold text-white mb-2">{t('upload.modal_success')}</h3>
               <p className="text-slate-400 text-sm mb-8">
-                Successfully processed <span className="text-emerald-400 font-mono font-bold text-lg">{uploadStats?.count}</span> transactions from your report.
+                {t('upload.success_desc', { count: uploadStats?.count })}
               </p>
               <button 
                 onClick={() => {
@@ -732,7 +732,7 @@ const App: React.FC = () => {
                 }}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98]"
               >
-                Go to Dashboard
+                {t('upload.go_to_dashboard')}
               </button>
             </div>
           </div>

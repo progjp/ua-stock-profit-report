@@ -69,7 +69,10 @@
       "gross_uah": "Брутто грн",
       "avg_price": "Сер. ціна",
       "cost_basis": "Собівартість",
-      "cost_basis_uah": "Собівартість грн"
+      "cost_basis_uah": "Собівартість грн",
+      "type": "Тип",
+      "nbu_rate": "Курс НБУ",
+      "total_uah": "Всього грн"
     },
     "footer": {
       "total_fees": "Всього комісій",
@@ -85,16 +88,31 @@
   },
   "upload": {
     "title": "Імпорт транзакцій",
+    "import_data": "Імпорт даних",
     "select_broker": "Оберіть брокера",
+    "broker_provider": "Провайдер брокера",
     "choose_file": "Оберіть файл CSV/Звіт",
+    "select_report_file": "Оберіть файл звіту",
     "upload_button": "Імпортувати звіт",
+    "process_button": "Обробити звіт",
+    "importing": "Імпортується...",
     "success": "Успішно імпортовано {{count}} транзакцій",
+    "success_desc": "Успішно оброблено {{count}} транзакцій з вашого звіту.",
     "error": "Не вдалося завантажити файл",
-    "clear_db": "Очистити базу даних"
+    "clear_db": "Очистити базу даних",
+    "danger_zone": "Небезпечна зона",
+    "clear_all_data": "Очистити всі дані",
+    "modal_success": "Імпорт завершено",
+    "go_to_dashboard": "Перейти до панелі",
+    "ibkr_option": "Interactive Brokers (Activity Flex Report CSV)",
+    "freedom_finance_option": "Freedom Finance (F24 Account Statement JSON)"
   },
   "tabs": {
     "dashboard": "Панель приладів",
     "history": "Історія",
     "upload": "Імпорт"
+  },
+  "history": {
+    "title": "Історія транзакцій"
   }
 }

@@ -69,7 +69,10 @@
       "gross_uah": "Gross UAH",
       "avg_price": "Avg. Price",
       "cost_basis": "Cost Basis",
-      "cost_basis_uah": "Cost Basis UAH"
+      "cost_basis_uah": "Cost Basis UAH",
+      "type": "Type",
+      "nbu_rate": "NBU Rate",
+      "total_uah": "Total UAH"
     },
     "footer": {
       "total_fees": "Total Fees",
@@ -85,16 +88,31 @@
   },
   "upload": {
     "title": "Import Transactions",
+    "import_data": "Import Data",
     "select_broker": "Select Broker",
+    "broker_provider": "Broker Provider",
     "choose_file": "Choose CSV/Report file",
+    "select_report_file": "Select Report File",
     "upload_button": "Import Report",
+    "process_button": "Process Report",
+    "importing": "Importing...",
     "success": "Successfully imported {{count}} transactions",
+    "success_desc": "Successfully processed {{count}} transactions from your report.",
     "error": "Failed to upload file",
-    "clear_db": "Clear Database"
+    "clear_db": "Clear Database",
+    "danger_zone": "Danger Zone",
+    "clear_all_data": "Clear All Data",
+    "modal_success": "Import Complete",
+    "go_to_dashboard": "Go to Dashboard",
+    "ibkr_option": "Interactive Brokers (Activity Flex Report CSV)",
+    "freedom_finance_option": "Freedom Finance (F24 Account Statement JSON)"
   },
   "tabs": {
     "dashboard": "Dashboard",
     "history": "History",
     "upload": "Import"
+  },
+  "history": {
+    "title": "Transaction History"
   }
 }

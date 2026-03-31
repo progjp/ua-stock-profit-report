@@ -29,10 +29,13 @@ stocks.db
 *.json
 # Exclude config or manifest files if they exist
 !package.json
+!package-lock.json
 !tsconfig.json
+!tsconfig.*.json
 !go.mod
 !go.sum
 !README.md
+!frontend/src/i18n/locales/*.json
 
 
 # IDEs

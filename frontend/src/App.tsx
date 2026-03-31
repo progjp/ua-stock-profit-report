@@ -129,10 +129,6 @@ const App: React.FC = () => {
   const [fromDate, setFromDate] = useState<string>(`${currentYear}-01-01`);
   const [toDate, setToDate] = useState<string>(`${currentYear}-12-31`);
 
-  useEffect(() => { 
-    fetchData().finally(() => setInitialLoading(false)); 
-  }, [fetchData]);
-
   const fetchData = useCallback(async () => {
     try {
       const params = { from: fromDate, to: toDate };
@@ -146,6 +142,10 @@ const App: React.FC = () => {
       setTransactions(txRes.data);
     } catch (err) { console.error('Error fetching data', err); }
   }, [fromDate, toDate]);
+
+  useEffect(() => { 
+    fetchData().finally(() => setInitialLoading(false)); 
+  }, [fetchData]);
 
   const handleYearChange = (year: string) => {
     if (year === 'all') {

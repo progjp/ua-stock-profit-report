@@ -43,5 +43,24 @@ func Init() {
 	}
 
 	// Migrate the schema
-	DB.AutoMigrate(&models.Transaction{})
+	DB.AutoMigrate(&models.User{}, &models.Transaction{})
+	MigrateExistingTransactions()
+}
+
+func MigrateExistingTransactions() {
+	var user models.User
+	email := "zavyalovroman@gmail.com"
+	if err := DB.Where("email = ?", email).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Create the initial user if it doesn't exist
+			user = models.User{
+				Email:        email,
+				AuthProvider: "local", // Or whatever default
+			}
+			DB.Create(&user)
+		}
+	}
+
+	// Assign all transactions with UserID = 0 (or NULL in some cases) to this user
+	DB.Model(&models.Transaction{}).Where("user_id IS NULL OR user_id = 0").Update("user_id", user.ID)
 }

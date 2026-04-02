@@ -23,8 +23,18 @@ const (
 	Fee      TransactionType = "FEE"
 )
 
+type User struct {
+	gorm.Model
+	Email        string        `json:"email" gorm:"uniqueIndex"`
+	Password     string        `json:"-"` // Hashed password, never return in JSON
+	AuthProvider string        `json:"auth_provider"` // "local", "google", etc.
+	AuthID       string        `json:"auth_id"`       // ID from OAuth provider
+	Transactions []Transaction `json:"transactions" gorm:"foreignKey:UserID"`
+}
+
 type Transaction struct {
 	gorm.Model
+	UserID      uint            `json:"user_id" gorm:"index"`
 	Broker      Broker          `json:"broker"`
 	Symbol      string          `json:"symbol"`
 	Type        TransactionType `json:"type"`

@@ -21,6 +21,8 @@ services:
     build: .
     container_name: stocks-backend
     restart: always
+    env_file:
+      - .env
     environment:
       - DB_HOST=db
       - DB_USER=postgres
@@ -28,6 +30,7 @@ services:
       - DB_NAME=stocks
       - DB_PORT=5432
       - GIN_MODE=release
+      - FRONTEND_URL=http://localhost:5173
     ports:
       - "8080:8080"
     depends_on:
@@ -39,7 +42,7 @@ services:
     container_name: stocks-frontend
     restart: always
     ports:
-      - "3000:80"
+      - "5173:80"
     depends_on:
       - backend
 

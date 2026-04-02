@@ -3,15 +3,42 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"stocks/auth"
 	"stocks/db"
 	"stocks/importer"
 	"stocks/logic"
 	"stocks/models"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+	"github.com/markbates/goth"
+	"github.com/markbates/goth/gothic"
+	"github.com/markbates/goth/providers/facebook"
+	"github.com/markbates/goth/providers/google"
+	"gorm.io/gorm"
+	"github.com/gorilla/sessions"
 )
+
+func init() {
+	// Load .env file
+	_ = godotenv.Load()
+
+	// Setup gothic session store
+	key := os.Getenv("SESSION_SECRET")
+	if key == "" {
+		key = "default-session-secret-change-me"
+	}
+	gothic.Store = sessions.NewCookieStore([]byte(key))
+
+	goth.UseProviders(
+		google.New(os.Getenv("GOOGLE_CLIENT_ID"), os.Getenv("GOOGLE_CLIENT_SECRET"), "http://localhost:8080/api/auth/google/callback"),
+		facebook.New(os.Getenv("FACEBOOK_CLIENT_ID"), os.Getenv("FACEBOOK_CLIENT_SECRET"), "http://localhost:8080/api/auth/facebook/callback"),
+	)
+}
 
 func main() {
 	db.Init()
@@ -19,23 +46,188 @@ func main() {
 	r := gin.Default()
 
 	// CORS for frontend development
-	r.Use(cors.Default())
+	config := cors.DefaultConfig()
+	config.AllowAllOrigins = true
+	config.AllowHeaders = append(config.AllowHeaders, "Authorization")
+	r.Use(cors.New(config))
 
-	r.POST("/api/upload", handleUpload)
-	r.DELETE("/api/transactions", cleanupTransactions)
-	r.GET("/api/holdings", getHoldings)
-	r.GET("/api/transactions", getTransactions)
-	r.GET("/api/summary", getSummary)
+	// Auth routes
+	authGroup := r.Group("/api/auth")
+	{
+		authGroup.POST("/register", handleRegister)
+		authGroup.POST("/login", handleLogin)
+		authGroup.GET("/:provider", handleOAuthLogin)
+		authGroup.GET("/:provider/callback", handleOAuthCallback)
+	}
+
+	// Protected routes
+	api := r.Group("/api")
+	api.Use(authMiddleware())
+	{
+		api.POST("/upload", handleUpload)
+		api.DELETE("/transactions", cleanupTransactions)
+		api.GET("/holdings", getHoldings)
+		api.GET("/transactions", getTransactions)
+		api.GET("/summary", getSummary)
+	}
 
 	r.Run(":8080")
 }
 
+func authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			c.Abort()
+			return
+		}
+
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header format must be Bearer <token>"})
+			c.Abort()
+			return
+		}
+
+		claims, err := auth.ValidateToken(parts[1])
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: " + err.Error()})
+			c.Abort()
+			return
+		}
+
+		c.Set("user_id", claims.UserID)
+		c.Next()
+	}
+}
+
+func handleRegister(c *gin.Context) {
+	var body struct {
+		Email    string `json:"email" binding:"required"`
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(body.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	user := models.User{
+		Email:        body.Email,
+		Password:     hashedPassword,
+		AuthProvider: "local",
+	}
+
+	if err := db.DB.Create(&user).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
+		return
+	}
+
+	token, err := auth.GenerateToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": token, "email": user.Email})
+}
+
+func handleLogin(c *gin.Context) {
+	var body struct {
+		Email    string `json:"email" binding:"required"`
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var user models.User
+	if err := db.DB.Where("email = ?", body.Email).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+
+	if !auth.CheckPasswordHash(body.Password, user.Password) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+
+	token, err := auth.GenerateToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": token, "email": user.Email})
+}
+
+func handleOAuthLogin(c *gin.Context) {
+	provider := c.Param("provider")
+	q := c.Request.URL.Query()
+	q.Add("provider", provider)
+	c.Request.URL.RawQuery = q.Encode()
+	
+	// Start OAuth process
+	gothic.BeginAuthHandler(c.Writer, c.Request)
+}
+
+func handleOAuthCallback(c *gin.Context) {
+	provider := c.Param("provider")
+	q := c.Request.URL.Query()
+	q.Add("provider", provider)
+	c.Request.URL.RawQuery = q.Encode()
+
+	gothUser, err := gothic.CompleteUserAuth(c.Writer, c.Request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "OAuth failed: " + err.Error()})
+		return
+	}
+
+	// Find or create user
+	var user models.User
+	if err := db.DB.Where("email = ?", gothUser.Email).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			user = models.User{
+				Email:        gothUser.Email,
+				AuthProvider: provider,
+				AuthID:       gothUser.UserID,
+			}
+			db.DB.Create(&user)
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "DB error: " + err.Error()})
+			return
+		}
+	}
+
+	token, err := auth.GenerateToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	// Redirect back to frontend with token
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:5173"
+	}
+	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?token=%s&email=%s", frontendURL, token, user.Email))
+}
+
 func cleanupTransactions(c *gin.Context) {
-	db.DB.Exec("DELETE FROM transactions")
+	userID := c.MustGet("user_id").(uint)
+	db.DB.Where("user_id = ?", userID).Delete(&models.Transaction{})
 	c.JSON(http.StatusOK, gin.H{"message": "Database cleared"})
 }
 
 func handleUpload(c *gin.Context) {
+	userID := c.MustGet("user_id").(uint)
 	broker := c.PostForm("broker")
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -68,7 +260,9 @@ func handleUpload(c *gin.Context) {
 	}
 
 	// Save to DB
-	for _, tx := range txs {
+	for i := range txs {
+		tx := &txs[i]
+		tx.UserID = userID
 		rate, err := logic.GetNBURate(tx.Currency, tx.Date)
 		if err != nil {
 			fmt.Printf("NBU rate error for %s on %s: %v\n", tx.Currency, tx.Date, err)
@@ -79,7 +273,6 @@ func handleUpload(c *gin.Context) {
 		
 		if tx.TotalAmount == 0 {
 			if tx.Type == models.Sell {
-				// (Qty * Price) is in trade currency. Commission/Tax are also treated as trade currency here
 				tx.TotalAmount = (tx.Quantity * tx.Price) - tx.Commission - tx.Tax
 			} else {
 				tx.TotalAmount = (tx.Quantity * tx.Price) + tx.Commission + tx.Tax
@@ -87,7 +280,8 @@ func handleUpload(c *gin.Context) {
 		}
 		tx.AmountUAH = tx.TotalAmount * tx.NBURate
 
-		if err := db.DB.FirstOrCreate(&tx, models.Transaction{ExternalID: tx.ExternalID}).Error; err != nil {
+		// We need to match on UserID AND ExternalID to avoid conflicts between users
+		if err := db.DB.Where(models.Transaction{UserID: userID, ExternalID: tx.ExternalID}).FirstOrCreate(tx).Error; err != nil {
 			fmt.Printf("DB error saving tx: %v\n", err)
 			continue
 		}
@@ -97,18 +291,20 @@ func handleUpload(c *gin.Context) {
 }
 
 func getHoldings(c *gin.Context) {
+	userID := c.MustGet("user_id").(uint)
 	from, to := parseDates(c)
 	var txs []models.Transaction
-	db.DB.Order("date asc").Find(&txs)
+	db.DB.Where("user_id = ?", userID).Order("date asc").Find(&txs)
 
 	data := logic.GetPortfolioData(txs, from, to)
 	c.JSON(http.StatusOK, data)
 }
 
 func getTransactions(c *gin.Context) {
+	userID := c.MustGet("user_id").(uint)
 	from, to := parseDates(c)
 	var txs []models.Transaction
-	query := db.DB.Order("date desc")
+	query := db.DB.Where("user_id = ?", userID).Order("date desc")
 	if from != nil {
 		query = query.Where("date >= ?", *from)
 	}
@@ -120,9 +316,10 @@ func getTransactions(c *gin.Context) {
 }
 
 func getSummary(c *gin.Context) {
+	userID := c.MustGet("user_id").(uint)
 	from, to := parseDates(c)
 	var txs []models.Transaction
-	db.DB.Order("date asc").Find(&txs)
+	db.DB.Where("user_id = ?", userID).Order("date asc").Find(&txs)
 
 	data := logic.GetPortfolioData(txs, from, to)
 	

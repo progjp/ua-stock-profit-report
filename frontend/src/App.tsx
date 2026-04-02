@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
-import { Upload, LayoutDashboard, History, DollarSign, TrendingUp, ReceiptText, Wallet } from 'lucide-react';
+import { Upload, LayoutDashboard, History, DollarSign, TrendingUp, ReceiptText, Wallet, LogOut } from 'lucide-react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './AuthContext';
+import { LoginPage, RegisterPage } from './AuthPages';
+import { LandingPage } from './LandingPage';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -109,8 +113,16 @@ const getCurrencyTotals = <T extends { currency: string }>(
   }, {} as Record<string, Record<string, number>>);
 };
 
-const App: React.FC = () => {
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" />;
+  return <>{children}</>;
+};
+
+const Dashboard: React.FC = () => {
   const { t, i18n } = useTranslation();
+  const { token, logout, email } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'upload'>('dashboard');
   const [summary, setSummary] = useState<Summary | null>(null);
   const [data, setData] = useState<PortfolioData | null>(null);
@@ -130,18 +142,22 @@ const App: React.FC = () => {
   const [toDate, setToDate] = useState<string>(`${currentYear}-12-31`);
 
   const fetchData = useCallback(async () => {
+    if (!token) return;
     try {
-      const params = { from: fromDate, to: toDate };
+      const config = { 
+        params: { from: fromDate, to: toDate },
+        headers: { Authorization: `Bearer ${token}` }
+      };
       const [sumRes, holdRes, txRes] = await Promise.all([
-        axios.get(`${API_URL}/summary`, { params }),
-        axios.get(`${API_URL}/holdings`, { params }),
-        axios.get(`${API_URL}/transactions`, { params }),
+        axios.get(`${API_URL}/summary`, config),
+        axios.get(`${API_URL}/holdings`, config),
+        axios.get(`${API_URL}/transactions`, config),
       ]);
       setSummary(sumRes.data);
       setData(holdRes.data);
       setTransactions(txRes.data);
     } catch (err) { console.error('Error fetching data', err); }
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, token]);
 
   useEffect(() => { 
     fetchData().finally(() => setInitialLoading(false)); 
@@ -159,17 +175,27 @@ const App: React.FC = () => {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
+    if (!file || !token) return;
     setLoading(true);
     const formData = new FormData();
     formData.append('file', file);
     formData.append('broker', selectedBroker);
     try {
-      const res = await axios.post(`${API_URL}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const res = await axios.post(`${API_URL}/upload`, formData, { 
+        headers: { 
+          'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${token}`
+        } 
+      });
       setUploadStats(res.data);
       setShowUploadModal(true);
       fetchData();
     } catch { alert('Upload failed'); } finally { setLoading(false); }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
   };
 
   if (initialLoading) {
@@ -180,22 +206,26 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans">
       <nav className="bg-slate-800 border-b border-slate-700 p-4">
         <div className="w-full max-w-[1800px] mx-auto flex justify-between items-center px-4">
-          <div className="flex items-center space-x-2 font-bold text-xl text-blue-400"><TrendingUp size={24} /><span>StockProfits</span></div>
+          <div className="flex items-center space-x-2 font-bold text-xl text-blue-400 cursor-pointer" onClick={() => navigate('/')}>
+            <TrendingUp size={24} /><span>StockProfits</span>
+          </div>
           <div className="flex items-center space-x-6">
             <div className="flex space-x-6 mr-6 border-r border-slate-700 pr-6">
               <button onClick={() => setActiveTab('dashboard')} className={`flex items-center space-x-1 ${activeTab === 'dashboard' ? 'text-blue-400' : 'hover:text-blue-300'}`}><LayoutDashboard size={18} /><span>{t('tabs.dashboard')}</span></button>
               <button onClick={() => setActiveTab('history')} className={`flex items-center space-x-1 ${activeTab === 'history' ? 'text-blue-400' : 'hover:text-blue-300'}`}><History size={18} /><span>{t('tabs.history')}</span></button>
               <button onClick={() => setActiveTab('upload')} className={`flex items-center space-x-1 ${activeTab === 'upload' ? 'text-blue-400' : 'hover:text-blue-300'}`}><Upload size={18} /><span>{t('tabs.upload')}</span></button>
             </div>
-            <div className="flex items-center space-x-2 bg-slate-900/50 p-1 rounded-lg border border-slate-700">
-              <button 
-                onClick={() => i18n.changeLanguage('en')} 
-                className={`px-2 py-1 text-[10px] font-black rounded transition-all ${i18n.language === 'en' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-500 hover:text-slate-300'}`}
-              >EN</button>
-              <button 
-                onClick={() => i18n.changeLanguage('uk')} 
-                className={`px-2 py-1 text-[10px] font-black rounded transition-all ${i18n.language === 'uk' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-500 hover:text-slate-300'}`}
-              >UA</button>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2 bg-slate-900/50 p-1 rounded-lg border border-slate-700">
+                <button onClick={() => i18n.changeLanguage('en')} className={`px-2 py-1 text-[10px] font-black rounded transition-all ${i18n.language === 'en' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-500 hover:text-slate-300'}`}>EN</button>
+                <button onClick={() => i18n.changeLanguage('uk')} className={`px-2 py-1 text-[10px] font-black rounded transition-all ${i18n.language === 'uk' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-500 hover:text-slate-300'}`}>UA</button>
+              </div>
+              <div className="flex items-center space-x-3 border-l border-slate-700 pl-6">
+                <span className="text-xs text-slate-400 hidden md:inline">{email}</span>
+                <button onClick={handleLogout} className="text-slate-400 hover:text-rose-400 transition-colors" title="Logout">
+                  <LogOut size={20} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -709,7 +739,7 @@ const App: React.FC = () => {
                 <div><label className="block text-sm font-medium text-slate-400 mb-2">{t('upload.select_report_file')}</label><input type="file" accept={selectedBroker === 'IBKR' ? '.csv' : '.json,.csv'} onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" /></div>
                 <button type="submit" disabled={!file || loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center space-x-2">{loading ? <div className="flex items-center space-x-2"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div><span>{t('upload.importing')}</span></div> : <><Upload size={20} /><span>{t('upload.process_button')}</span></>}</button>
               </form>
-              <div className="mt-12 pt-8 border-t border-slate-700"><h3 className="text-rose-400 font-bold mb-4 flex items-center space-x-2"><span>{t('upload.danger_zone')}</span></h3><button onClick={async () => { if (confirm('Clear all imported data?')) { await axios.delete(`${API_URL}/transactions`); fetchData(); alert('Database cleared'); } }} className="w-full bg-transparent border border-rose-900 hover:bg-rose-900/20 text-rose-400 font-bold py-2 px-6 rounded-lg transition-colors">{t('upload.clear_all_data')}</button></div>
+              <div className="mt-12 pt-8 border-t border-slate-700"><h3 className="text-rose-400 font-bold mb-4 flex items-center space-x-2"><span>{t('upload.danger_zone')}</span></h3><button onClick={async () => { if (confirm('Clear all imported data?')) { await axios.delete(`${API_URL}/transactions`, { headers: { Authorization: `Bearer ${token}` } }); fetchData(); alert('Database cleared'); } }} className="w-full bg-transparent border border-rose-900 hover:bg-rose-900/20 text-rose-400 font-bold py-2 px-6 rounded-lg transition-colors">{t('upload.clear_all_data')}</button></div>
             </div>
           </div>
         )}
@@ -741,6 +771,29 @@ const App: React.FC = () => {
         </div>
       )}
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   );
 };
 

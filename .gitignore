@@ -43,6 +43,7 @@ stocks.db
 .idea/
 
 # macOS
+.env
 .DS_Store
 
 # Frontend

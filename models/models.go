@@ -32,6 +32,33 @@ type User struct {
 	Transactions []Transaction `json:"transactions" gorm:"foreignKey:UserID"`
 }
 
+type ExchangeRate struct {
+	gorm.Model
+	Currency string    `json:"currency" gorm:"index:idx_currency_date,unique"`
+	Date     time.Time `json:"date" gorm:"index:idx_currency_date,unique"`
+	Rate     float64   `json:"rate"`
+}
+
+type JobStatus string
+
+const (
+	JobPending    JobStatus = "PENDING"
+	JobProcessing JobStatus = "PROCESSING"
+	JobCompleted  JobStatus = "COMPLETED"
+	JobFailed     JobStatus = "FAILED"
+)
+
+type UploadJob struct {
+	gorm.Model
+	UserID         uint      `json:"user_id" gorm:"index"`
+	Status         JobStatus `json:"status"`
+	FileName       string    `json:"file_name"`
+	Broker         Broker    `json:"broker"`
+	TotalCount     int       `json:"total_count"`
+	ProcessedCount int       `json:"processed_count"`
+	Error          string    `json:"error"`
+}
+
 type Transaction struct {
 	gorm.Model
 	UserID      uint            `json:"user_id" gorm:"index"`

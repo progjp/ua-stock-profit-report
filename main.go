@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/markbates/goth/providers/google"
 	"gorm.io/gorm"
 	"github.com/gorilla/sessions"
+	"io"
 )
 
 func init() {
@@ -43,6 +45,45 @@ func init() {
 func main() {
 	db.Init()
 
+	// Command line flags
+	syncFlag := flag.Bool("sync-rates", false, "Sync NBU rates for a period")
+	fromFlag := flag.String("from", "", "Start date (YYYY-MM-DD)")
+	toFlag := flag.String("to", "", "End date (YYYY-MM-DD)")
+	flag.Parse()
+
+	if *syncFlag {
+		if *fromFlag == "" {
+			fmt.Println("Usage: ./stocks -sync-rates -from 2023-01-01 [-to 2026-03-31]")
+			return
+		}
+		from, err := time.Parse("2006-01-02", *fromFlag)
+		if err != nil {
+			fmt.Printf("Invalid from date: %v\n", err)
+			return
+		}
+
+		var to time.Time
+		if *toFlag == "" {
+			to = time.Now()
+			fmt.Printf("No end date provided, defaulting to today: %s\n", to.Format("2006-01-02"))
+		} else {
+			to, err = time.Parse("2006-01-02", *toFlag)
+			if err != nil {
+				fmt.Printf("Invalid to date: %v\n", err)
+				return
+			}
+		}
+
+		fmt.Printf("Starting manual sync from %s to %s...\n", from.Format("2006-01-02"), to.Format("2006-01-02"))
+		err = logic.SyncRatesForPeriod(from, to)
+		if err != nil {
+			fmt.Printf("Sync failed: %v\n", err)
+		} else {
+			fmt.Println("Sync finished successfully")
+		}
+		return
+	}
+
 	r := gin.Default()
 
 	// CORS for frontend development
@@ -60,18 +101,41 @@ func main() {
 		authGroup.GET("/:provider/callback", handleOAuthCallback)
 	}
 
+	// Public routes
+	r.GET("/api/rates", getRates)
+
 	// Protected routes
 	api := r.Group("/api")
 	api.Use(authMiddleware())
 	{
 		api.POST("/upload", handleUpload)
+		api.GET("/jobs", getJobs)
 		api.DELETE("/transactions", cleanupTransactions)
 		api.GET("/holdings", getHoldings)
 		api.GET("/transactions", getTransactions)
 		api.GET("/summary", getSummary)
 	}
-
 	r.Run(":8080")
+}
+
+func getRates(c *gin.Context) {
+	from, to := parseDates(c)
+	currencies := c.QueryArray("currency")
+	if len(currencies) == 0 {
+		currencies = []string{"USD", "EUR"}
+	}
+
+	var rates []models.ExchangeRate
+	query := db.DB.Where("currency IN ?", currencies).Order("date asc")
+	if from != nil {
+		query = query.Where("date >= ?", *from)
+	}
+	if to != nil {
+		query = query.Where("date <= ?", *to)
+	}
+	query.Find(&rates)
+
+	c.JSON(http.StatusOK, rates)
 }
 
 func authMiddleware() gin.HandlerFunc {
@@ -226,6 +290,13 @@ func cleanupTransactions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Database cleared"})
 }
 
+func getJobs(c *gin.Context) {
+	userID := c.MustGet("user_id").(uint)
+	var jobs []models.UploadJob
+	db.DB.Where("user_id = ?", userID).Order("created_at desc").Limit(5).Find(&jobs)
+	c.JSON(http.StatusOK, jobs)
+}
+
 func handleUpload(c *gin.Context) {
 	userID := c.MustGet("user_id").(uint)
 	broker := c.PostForm("broker")
@@ -242,27 +313,75 @@ func handleUpload(c *gin.Context) {
 	}
 	defer f.Close()
 
+	// Read file into memory so we can process it in background
+	fileBytes, err := io.ReadAll(f)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not read file"})
+		return
+	}
+
+	// Create Job
+	job := models.UploadJob{
+		UserID:   userID,
+		Status:   models.JobPending,
+		FileName: file.Filename,
+		Broker:   models.Broker(broker),
+	}
+	db.DB.Create(&job)
+
+	// Start background processing
+	go processUpload(job.ID, fileBytes)
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": "Upload started in background",
+		"job_id":  job.ID,
+	})
+}
+
+func processUpload(jobID uint, fileBytes []byte) {
+	var job models.UploadJob
+	db.DB.First(&job, jobID)
+
+	updateStatus := func(status models.JobStatus, errMsg string) {
+		job.Status = status
+		job.Error = errMsg
+		db.DB.Save(&job)
+	}
+
+	updateProgress := func(processed, total int) {
+		job.ProcessedCount = processed
+		job.TotalCount = total
+		db.DB.Save(&job)
+	}
+
+	updateStatus(models.JobProcessing, "")
+
 	var imp importer.Importer
-	switch models.Broker(broker) {
+	switch job.Broker {
 	case models.IBKR:
 		imp = &importer.IBKRImporter{}
 	case models.FreedomFinance:
 		imp = &importer.FreedomFinanceImporter{}
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid broker"})
+		updateStatus(models.JobFailed, "Invalid broker")
 		return
 	}
 
-	txs, err := imp.Parse(f)
+	// Parse expects io.Reader
+	txs, err := imp.Parse(strings.NewReader(string(fileBytes)))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse file: " + err.Error()})
+		updateStatus(models.JobFailed, "Failed to parse file: "+err.Error())
 		return
 	}
+
+	total := len(txs)
+	updateProgress(0, total)
 
 	// Save to DB
 	for i := range txs {
 		tx := &txs[i]
-		tx.UserID = userID
+		tx.UserID = job.UserID
+		
 		rate, err := logic.GetNBURate(tx.Currency, tx.Date)
 		if err != nil {
 			fmt.Printf("NBU rate error for %s on %s: %v\n", tx.Currency, tx.Date, err)
@@ -280,14 +399,14 @@ func handleUpload(c *gin.Context) {
 		}
 		tx.AmountUAH = tx.TotalAmount * tx.NBURate
 
-		// We need to match on UserID AND ExternalID to avoid conflicts between users
-		if err := db.DB.Where(models.Transaction{UserID: userID, ExternalID: tx.ExternalID}).FirstOrCreate(tx).Error; err != nil {
+		if err := db.DB.Where(models.Transaction{UserID: job.UserID, ExternalID: tx.ExternalID}).FirstOrCreate(tx).Error; err != nil {
 			fmt.Printf("DB error saving tx: %v\n", err)
-			continue
 		}
+
+		updateProgress(i+1, total)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Successfully uploaded and parsed", "count": len(txs)})
+	updateStatus(models.JobCompleted, "")
 }
 
 func getHoldings(c *gin.Context) {

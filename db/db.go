@@ -43,7 +43,7 @@ func Init() {
 	}
 
 	// Migrate the schema
-	DB.AutoMigrate(&models.User{}, &models.Transaction{})
+	DB.AutoMigrate(&models.User{}, &models.Transaction{}, &models.ExchangeRate{}, &models.UploadJob{})
 	MigrateExistingTransactions()
 }
 

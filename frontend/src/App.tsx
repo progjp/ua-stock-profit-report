@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
-import { Upload, LayoutDashboard, History, DollarSign, TrendingUp, ReceiptText, Wallet, LogOut } from 'lucide-react';
+import { Upload, LayoutDashboard, History, DollarSign, TrendingUp, ReceiptText, Wallet, LogOut, Loader2, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
-import { LoginPage, RegisterPage } from './AuthPages';
 import { LandingPage } from './LandingPage';
+import { CurrencyChart } from './CurrencyChart';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -89,6 +89,17 @@ interface Transaction {
   amount_uah: number;
 }
 
+interface UploadJob {
+  ID: number;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  file_name: string;
+  broker: string;
+  total_count: number;
+  processed_count: number;
+  error: string;
+  CreatedAt: string;
+}
+
 const formatCurrency = (amount: number, currency: string) => {
   const symbols: Record<string, string> = { 'USD': '$', 'EUR': '€', 'UAH': '₴', 'GBP': '£' };
   const symbol = symbols[currency] || currency;
@@ -115,7 +126,7 @@ const getCurrencyTotals = <T extends { currency: string }>(
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
-  if (!isAuthenticated) return <Navigate to="/login" />;
+  if (!isAuthenticated) return <Navigate to="/" />;
   return <>{children}</>;
 };
 
@@ -132,8 +143,8 @@ const Dashboard: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadStats, setUploadStats] = useState<{ count: number } | null>(null);
+  const [jobs, setJobs] = useState<UploadJob[]>([]);
+  const pollingRef = useRef<number | null>(null);
 
   // Date range state
   const currentYear = new Date().getFullYear().toString();
@@ -159,9 +170,37 @@ const Dashboard: React.FC = () => {
     } catch (err) { console.error('Error fetching data', err); }
   }, [fromDate, toDate, token]);
 
+  const fetchJobs = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_URL}/jobs`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const newJobs: UploadJob[] = res.data;
+      
+      // Check if any job just completed to refresh data
+      const hadProcessing = jobs.some(j => j.status === 'PROCESSING' || j.status === 'PENDING');
+      const nowProcessing = newJobs.some(j => j.status === 'PROCESSING' || j.status === 'PENDING');
+      
+      if (hadProcessing && !nowProcessing) {
+        fetchData();
+      }
+      
+      setJobs(newJobs);
+    } catch (err) { console.error('Error fetching jobs', err); }
+  }, [token, jobs, fetchData]);
+
   useEffect(() => { 
     fetchData().finally(() => setInitialLoading(false)); 
   }, [fetchData]);
+
+  useEffect(() => {
+    fetchJobs();
+    pollingRef.current = window.setInterval(fetchJobs, 3000);
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [fetchJobs]);
 
   const handleYearChange = (year: string) => {
     if (year === 'all') {
@@ -181,15 +220,14 @@ const Dashboard: React.FC = () => {
     formData.append('file', file);
     formData.append('broker', selectedBroker);
     try {
-      const res = await axios.post(`${API_URL}/upload`, formData, { 
+      await axios.post(`${API_URL}/upload`, formData, { 
         headers: { 
           'Content-Type': 'multipart/form-data',
           'Authorization': `Bearer ${token}`
         } 
       });
-      setUploadStats(res.data);
-      setShowUploadModal(true);
-      fetchData();
+      setFile(null);
+      fetchJobs();
     } catch { alert('Upload failed'); } finally { setLoading(false); }
   };
 
@@ -293,6 +331,16 @@ const Dashboard: React.FC = () => {
                 <div className="text-3xl font-mono font-bold text-slate-100 leading-none">{formatUAH(summary?.total_cost_basis_uah || 0)}</div>
                 <div className="mt-2 text-xs text-slate-500 font-medium">{t('summary.holdings_cost_desc')}</div>
               </div>
+            </div>
+
+            {/* Currency Rates Chart */}
+            <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
+              <CurrencyChart 
+                initialFromDate={fromDate} 
+                initialToDate={toDate} 
+                title="Historical Exchange Rates (NBU)"
+                isDark={true}
+              />
             </div>
 
             {/* UA Tax Estimation Section */}
@@ -731,45 +779,69 @@ const Dashboard: React.FC = () => {
         )}
 
         {activeTab === 'upload' && (
-          <div className="max-w-md mx-auto">
+          <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-slate-800 p-8 rounded-xl border border-slate-700 shadow-lg">
               <h2 className="text-2xl font-bold mb-6 flex items-center space-x-2"><Upload className="text-blue-400" /><span>{t('upload.import_data')}</span></h2>
               <form onSubmit={handleUpload} className="space-y-6">
                 <div><label className="block text-sm font-medium text-slate-400 mb-2">{t('upload.broker_provider')}</label><select value={selectedBroker} onChange={(e) => setSelectedBroker(e.target.value as 'IBKR' | 'FreedomFinance')} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none transition-all"><option value="IBKR">{t('upload.ibkr_option')}</option><option value="FreedomFinance">{t('upload.freedom_finance_option')}</option></select></div>
                 <div><label className="block text-sm font-medium text-slate-400 mb-2">{t('upload.select_report_file')}</label><input type="file" accept={selectedBroker === 'IBKR' ? '.csv' : '.json,.csv'} onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-100 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" /></div>
-                <button type="submit" disabled={!file || loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center space-x-2">{loading ? <div className="flex items-center space-x-2"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div><span>{t('upload.importing')}</span></div> : <><Upload size={20} /><span>{t('upload.process_button')}</span></>}</button>
+                <button type="submit" disabled={!file || loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center space-x-2">{loading ? <div className="flex items-center space-x-2"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div><span>{t('upload.starting')}</span></div> : <><Upload size={20} /><span>{t('upload.process_button')}</span></>}</button>
               </form>
               <div className="mt-12 pt-8 border-t border-slate-700"><h3 className="text-rose-400 font-bold mb-4 flex items-center space-x-2"><span>{t('upload.danger_zone')}</span></h3><button onClick={async () => { if (confirm('Clear all imported data?')) { await axios.delete(`${API_URL}/transactions`, { headers: { Authorization: `Bearer ${token}` } }); fetchData(); alert('Database cleared'); } }} className="w-full bg-transparent border border-rose-900 hover:bg-rose-900/20 text-rose-400 font-bold py-2 px-6 rounded-lg transition-colors">{t('upload.clear_all_data')}</button></div>
+            </div>
+
+            <div className="bg-slate-800 p-8 rounded-xl border border-slate-700 shadow-lg">
+              <h2 className="text-2xl font-bold mb-6 flex items-center space-x-2"><Clock className="text-blue-400" /><span>Recent Activity</span></h2>
+              <div className="space-y-4">
+                {jobs.length === 0 && <p className="text-slate-500 italic text-center py-8">No recent activity</p>}
+                {jobs.map(job => (
+                  <div key={job.ID} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700 relative overflow-hidden">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="max-w-[70%]">
+                        <p className="text-sm font-bold text-slate-200 truncate" title={job.file_name}>{job.file_name}</p>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">{job.broker} • {new Date(job.CreatedAt).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        {job.status === 'PROCESSING' || job.status === 'PENDING' ? (
+                          <span className="flex items-center gap-1 text-blue-400 text-[10px] font-black uppercase"><Loader2 size={12} className="animate-spin" /> Processing</span>
+                        ) : job.status === 'COMPLETED' ? (
+                          <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-black uppercase"><CheckCircle2 size={12} /> Completed</span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-rose-400 text-[10px] font-black uppercase"><AlertCircle size={12} /> Failed</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {job.status === 'PROCESSING' && (
+                      <div className="mt-3">
+                        <div className="flex justify-between text-[10px] font-bold mb-1">
+                          <span className="text-slate-400">Progress</span>
+                          <span className="text-blue-400">{job.total_count > 0 ? Math.round((job.processed_count / job.total_count) * 100) : 0}%</span>
+                        </div>
+                        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className="bg-blue-500 h-full transition-all duration-500" 
+                            style={{ width: `${job.total_count > 0 ? (job.processed_count / job.total_count) * 100 : 0}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1 text-right font-mono">{job.processed_count} / {job.total_count} txs</p>
+                      </div>
+                    )}
+
+                    {job.status === 'COMPLETED' && (
+                      <p className="text-[10px] text-slate-400 mt-1 font-medium italic">Successfully processed {job.total_count} transactions.</p>
+                    )}
+
+                    {job.status === 'FAILED' && (
+                      <p className="text-[10px] text-rose-400/80 mt-1 font-medium bg-rose-950/20 p-2 rounded border border-rose-900/30">{job.error}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
       </main>
-
-      {/* Upload Success Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-800 border border-slate-700 rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-8 text-center">
-              <div className="mx-auto w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6">
-                <TrendingUp size={32} className="text-emerald-400" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">{t('upload.modal_success')}</h3>
-              <p className="text-slate-400 text-sm mb-8">
-                {t('upload.success_desc', { count: uploadStats?.count })}
-              </p>
-              <button 
-                onClick={() => {
-                  setShowUploadModal(false);
-                  setActiveTab('dashboard');
-                }}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98]"
-              >
-                {t('upload.go_to_dashboard')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -780,8 +852,6 @@ const App: React.FC = () => {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
           <Route 
             path="/dashboard" 
             element={

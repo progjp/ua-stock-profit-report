@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { Upload, LayoutDashboard, History, DollarSign, TrendingUp, ReceiptText, Wallet, LogOut, Loader2, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
 import { LandingPage } from './LandingPage';
 import { CurrencyChart } from './CurrencyChart';
@@ -126,7 +126,14 @@ const getCurrencyTotals = <T extends { currency: string }>(
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
-  if (!isAuthenticated) return <Navigate to="/" />;
+  const location = useLocation();
+  if (!isAuthenticated) {
+    // If we have a token in URL (OAuth redirect), let the components handle it
+    const params = new URLSearchParams(location.search);
+    if (params.get("token")) return <>{children}</>;
+    
+    return <Navigate to="/" />;
+  }
   return <>{children}</>;
 };
 
@@ -846,10 +853,38 @@ const Dashboard: React.FC = () => {
   );
 };
 
+const AuthHandler: React.FC = () => {
+  const { login } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token");
+    const email = params.get("email");
+    if (token && email) {
+      login(token, email);
+      
+      // Clean up URL: remove token and email params
+      params.delete("token");
+      params.delete("email");
+      const cleanSearch = params.toString();
+      const newSearch = cleanSearch ? `?${cleanSearch}` : "";
+      
+      // Navigate to /dashboard (or wherever you were)
+      const path = location.pathname === "/" ? "/dashboard" : location.pathname;
+      navigate(path + newSearch, { replace: true });
+    }
+  }, [location, login, navigate]);
+
+  return null;
+};
+
 const App: React.FC = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <AuthHandler />
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route 

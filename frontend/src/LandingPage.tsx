@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { BarChart3, ShieldCheck, Zap, Globe, TrendingUp } from "lucide-react";
 import { AuthModal } from "./AuthModal";
@@ -7,17 +7,9 @@ import { CurrencyChart } from "./CurrencyChart";
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const { isAuthenticated } = useAuth();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    if (params.get("token")) {
-      setIsAuthModalOpen(true);
-    }
-  }, [location]);
 
   const handleGetStarted = () => {
     if (isAuthenticated) {

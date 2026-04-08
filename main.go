@@ -281,7 +281,7 @@ func handleOAuthCallback(c *gin.Context) {
 	if frontendURL == "" {
 		frontendURL = "http://localhost:5173"
 	}
-	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?token=%s&email=%s", frontendURL, token, user.Email))
+	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/?token=%s&email=%s", frontendURL, token, user.Email))
 }
 
 func cleanupTransactions(c *gin.Context) {

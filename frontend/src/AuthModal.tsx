@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "./AuthContext";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Mail, Lock, Loader2, X } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
@@ -20,7 +20,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [error, setError] = useState("");
   const { login } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
   useEffect(() => {
     if (isOpen) {
@@ -28,20 +27,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setError("");
     }
   }, [isOpen, initialMode]);
-
-  useEffect(() => {
-    // Handle OAuth redirect token cleanup
-    const params = new URLSearchParams(location.search);
-    const token = params.get("token");
-    const userEmail = params.get("email");
-    if (token && userEmail) {
-      login(token, userEmail);
-      if (window.location.hash === "#_=_") {
-        window.history.replaceState(null, "", window.location.pathname + window.location.search);
-      }
-      navigate("/dashboard");
-    }
-  }, [location, login, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
